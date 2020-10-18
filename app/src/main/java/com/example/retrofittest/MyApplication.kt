@@ -1,9 +1,7 @@
 package com.example.retrofittest
 
 import android.app.Application
-import android.util.Log
 import com.example.retrofittest.api.GithubApi
-import com.example.retrofittest.entity.SearchRepositoriesResult
 import com.example.retrofittest.repository.GithubRepository
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
@@ -14,22 +12,13 @@ import org.koin.android.ext.koin.androidContext
 import org.koin.androidx.viewmodel.dsl.viewModel
 import org.koin.core.context.startKoin
 import org.koin.dsl.module
-import retrofit2.HttpException
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
-import java.lang.Exception
-import java.lang.IllegalStateException
 import java.lang.RuntimeException
-import java.lang.reflect.InvocationHandler
-import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
 import java.lang.reflect.Proxy
 import java.util.concurrent.TimeUnit
-import kotlin.coroutines.Continuation
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
-import kotlin.reflect.jvm.kotlinFunction
 
 class MyApplication : Application() {
     override fun onCreate() {
@@ -69,25 +58,25 @@ class MyApplication : Application() {
         single {
             val retrofit = get<Retrofit>()
             val origApi = retrofit.create(GithubApi::class.java)
-            val api = proxy(origApi, GithubApi::class.java) { method, arguments ->
-                method.invoke(origApi, *arguments.toTypedArray())
+            val proxyApi = proxy(GithubApi::class.java) { method, arguments ->
+                try {
+                    method.invokeSuspend(origApi, *arguments.toTypedArray())
+                } catch (e: Throwable) {
+                    throw MyException(e)
+                }
             }
-            GithubRepository(api)
+            GithubRepository(proxyApi)
         }
 
         viewModel { FirstViewModel(get()) }
     }
 
     @Suppress("UNCHECKED_CAST")
-    fun <C : Any> proxy(target: Any, contract: Class<C>, invoker: SuspendInvoker): C =
+    fun <C : Any> proxy(contract: Class<C>, invoker: SuspendInvoker): C =
         Proxy.newProxyInstance(contract.classLoader, arrayOf(contract)) { _, method, arguments ->
             runBlocking {
-                try {
-                    val argumentsWithoutContinuation = arguments.take(arguments.size -1)
-                    method.invokeSuspend(target, *argumentsWithoutContinuation.toTypedArray())
-                } catch (e:Throwable) {
-                    throw MyException(e)
-                }
+                val argumentsWithoutContinuation = arguments.take(arguments.size -1)
+                invoker.invoke(method, argumentsWithoutContinuation)
             }
         } as C
 }

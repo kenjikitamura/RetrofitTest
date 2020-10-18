@@ -12,7 +12,7 @@ class FirstViewModel(
             val result = githubRepository.getSearchRepositories()
             Log.d("Test", "FirstViewModel.test invoke repository after $result")
         } catch (e: MyException) {
-            Log.d("Test", "FirstViewModel.test MyException!!")
+            Log.d("Test", "FirstViewModel.test MyException!!", e)
         }
     }
 }
