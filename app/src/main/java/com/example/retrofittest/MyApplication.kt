@@ -26,6 +26,8 @@ import java.lang.reflect.Method
 import java.lang.reflect.Proxy
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.Continuation
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
 import kotlin.reflect.jvm.kotlinFunction
 
@@ -69,9 +71,9 @@ class MyApplication : Application() {
             //val api = Converter<GithubApi>().conv(retrofit, GithubApi::class.java)
             val origApi = retrofit.create(GithubApi::class.java)
             val api = proxy(origApi, GithubApi::class.java) { method, arguments ->
-                Log.d("Test", "invoke before $method ${arguments}")
+                Log.d("Test", "ProxyBody start $method ${arguments}")
                 val ret = method.invoke(origApi, *arguments.toTypedArray())
-                Log.d("Test", "invoke after ${ret}")
+                Log.d("Test", "ProxyBody end ${ret}")
                 ret
             }
             GithubRepository(api)
@@ -79,39 +81,6 @@ class MyApplication : Application() {
 
         viewModel { FirstViewModel(get()) }
     }
-
-    /*
-    class Converter<T> {
-        @Suppress("UNCHECKED_CAST")
-        fun conv(retrofit: Retrofit, clazz: Class<T>): T {
-            val api = retrofit.create(clazz)
-            val proxy = Proxy.newProxyInstance(
-                clazz.classLoader,
-                arrayOf(clazz),
-                Handler(api)
-            )
-
-            return proxy as? T ?: throw IllegalStateException("proxy cannot cast target class type.")
-        }
-
-        inner class Handler(private val obj: T): InvocationHandler {
-            override fun invoke(proxy: Any?, method: Method?, args: Array<out Any>?): Any? {
-                Log.d("Test", "Before method=$method args=$args")
-                try {
-                    val ret = if (args == null) {
-                        method!!.invoke(obj)
-                    } else {
-                        method!!.invoke(obj, *args)
-                    }
-                    Log.d("Test", "After $ret")
-                    return ret
-                } catch (e: Throwable) {
-                    throw MyException(e)
-                }
-            }
-        }
-    }
-     */
 
     private interface SuspendFunction {
         suspend fun invoke(): Any?
@@ -122,41 +91,15 @@ class MyApplication : Application() {
     @Suppress("UNCHECKED_CAST")
     fun <C : Any> proxy(target: Any, contract: Class<C>, invoker: SuspendInvoker): C =
         Proxy.newProxyInstance(contract.classLoader, arrayOf(contract)) { _, method, arguments ->
-            Log.d("Test", "proxy 1")
-            val continuation = arguments.last() as Continuation<*>
-            val argumentsWithoutContinuation = arguments.take(arguments.size)
-            Log.d("Test", "proxy 2 arguments=${arguments.size} $arguments")
-            val a = try {
-                val ret = SuspendRemover.invoke(object : SuspendFunction {
-                    override suspend fun invoke(): C {
-                        Log.d("Test", "before invoker")
-                        val a = try {
-                            Log.d("Test", "before invoker 1 method=$method")
-                            val c = suspendCoroutine<C> {
-                                val b = invoker(method, argumentsWithoutContinuation) as C
-                            }
+            Log.d("Test", "Proxy 1 $method")
+            val continuation = arguments.last() as Continuation<Any?>
+            val argumentsWithoutContinuation = arguments.take(arguments.size -1)
 
-                            Log.d("Test", "before invoker 2")
-                            c
-                        } catch (e: Throwable) {
-                            Log.d("Test", "error invoker $e")
-                            throw MyException(e)
-                        }finally {
-                            Log.d("Test", "before invoker 3")
-                        }
-                        Log.d("Test", "after invoker $a")
-                        return a
-                    }
-                }, continuation)
-                Log.d("Test", "proxy 2 invoke Success! ret=${ret.javaClass.name}")
-                // val ret = method.invoke(target, *argumentsWithoutContinuation.toTypedArray())
-                ret
-            } catch (e: Exception) {
-                Log.d("Test", "proxy 2 invoke Fail! $e")
-                val e2 = if (e is InvocationTargetException) e.cause ?: e else e
-                throw MyException(e2)
+            val a = runBlocking {
+                SearchRepositoriesResult(999, emptyList())
             }
-            Log.d("Test", "proxy 3")
+
+            Log.d("Test", "Proxy end")
             a
         } as C
 
@@ -164,6 +107,11 @@ class MyApplication : Application() {
         suspend fun add(a: Int, b: Int): Int
     }
 }
+
+suspend fun Method.invokeSuspend(obj: Any, vararg args: Any?): Any? =
+    suspendCoroutine { cont ->
+        invoke(obj, *args, cont)
+    }
 
 class MyException(e: Throwable): RuntimeException(e)
 

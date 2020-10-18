@@ -10,6 +10,6 @@ class FirstViewModel(
     suspend fun test() {
         Log.d("Test", "FirstViewModel.test invoke repository before")
         val result = githubRepository.getSearchRepositories()
-        Log.d("Test", "FirstViewModel.test invoke repository after")
+        Log.d("Test", "FirstViewModel.test invoke repository after $result")
     }
 }
