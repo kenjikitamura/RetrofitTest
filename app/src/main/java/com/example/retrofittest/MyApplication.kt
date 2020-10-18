@@ -96,7 +96,12 @@ class MyApplication : Application() {
             val argumentsWithoutContinuation = arguments.take(arguments.size -1)
 
             val a = runBlocking {
-                SearchRepositoriesResult(999, emptyList())
+                try {
+                    method.invokeSuspend(target, *argumentsWithoutContinuation.toTypedArray())
+                } catch (e:Throwable) {
+                    Log.d("Test", "Proxy invokeSuspend error", e)
+                    throw MyException(e)
+                }
             }
 
             Log.d("Test", "Proxy end")

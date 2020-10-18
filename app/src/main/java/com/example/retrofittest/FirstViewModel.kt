@@ -9,7 +9,11 @@ class FirstViewModel(
 ): ViewModel() {
     suspend fun test() {
         Log.d("Test", "FirstViewModel.test invoke repository before")
-        val result = githubRepository.getSearchRepositories()
-        Log.d("Test", "FirstViewModel.test invoke repository after $result")
+        try {
+            val result = githubRepository.getSearchRepositories()
+            Log.d("Test", "FirstViewModel.test invoke repository after $result")
+        } catch (e: MyException) {
+            Log.d("Test", "FirstViewModel.test MyException!!")
+        }
     }
 }
