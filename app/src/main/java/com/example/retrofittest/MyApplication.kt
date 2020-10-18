@@ -7,6 +7,8 @@ import com.example.retrofittest.entity.SearchRepositoriesResult
 import com.example.retrofittest.repository.GithubRepository
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import org.koin.android.ext.koin.androidContext
 import org.koin.androidx.viewmodel.dsl.viewModel
@@ -24,6 +26,8 @@ import java.lang.reflect.Method
 import java.lang.reflect.Proxy
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.Continuation
+import kotlin.coroutines.suspendCoroutine
+import kotlin.reflect.jvm.kotlinFunction
 
 class MyApplication : Application() {
     override fun onCreate() {
@@ -63,13 +67,12 @@ class MyApplication : Application() {
         single {
             val retrofit = get<Retrofit>()
             //val api = Converter<GithubApi>().conv(retrofit, GithubApi::class.java)
-            val api = proxy(GithubApi::class.java) { method, arguments ->
-                //retrofit.create(GithubApi::class.java)
-                throw Exception("HOGE")
-                //SearchRepositoriesResult(
-                //999,
-                //emptyList()
-                //)
+            val origApi = retrofit.create(GithubApi::class.java)
+            val api = proxy(origApi, GithubApi::class.java) { method, arguments ->
+                Log.d("Test", "invoke before $method ${arguments}")
+                val ret = method.invoke(origApi, *arguments.toTypedArray())
+                Log.d("Test", "invoke after ${ret}")
+                ret
             }
             GithubRepository(api)
         }
@@ -117,18 +120,39 @@ class MyApplication : Application() {
     private val SuspendRemover = SuspendFunction::class.java.methods[0]
 
     @Suppress("UNCHECKED_CAST")
-    fun <C : Any> proxy(contract: Class<C>, invoker: SuspendInvoker): C =
+    fun <C : Any> proxy(target: Any, contract: Class<C>, invoker: SuspendInvoker): C =
         Proxy.newProxyInstance(contract.classLoader, arrayOf(contract)) { _, method, arguments ->
             Log.d("Test", "proxy 1")
             val continuation = arguments.last() as Continuation<*>
-            val argumentsWithoutContinuation = arguments.take(arguments.size - 1)
-            Log.d("Test", "proxy 2")
+            val argumentsWithoutContinuation = arguments.take(arguments.size)
+            Log.d("Test", "proxy 2 arguments=${arguments.size} $arguments")
             val a = try {
                 val ret = SuspendRemover.invoke(object : SuspendFunction {
-                    override suspend fun invoke() = invoker(method, argumentsWithoutContinuation)
+                    override suspend fun invoke(): C {
+                        Log.d("Test", "before invoker")
+                        val a = try {
+                            Log.d("Test", "before invoker 1 method=$method")
+                            val c = suspendCoroutine<C> {
+                                val b = invoker(method, argumentsWithoutContinuation) as C
+                            }
+
+                            Log.d("Test", "before invoker 2")
+                            c
+                        } catch (e: Throwable) {
+                            Log.d("Test", "error invoker $e")
+                            throw MyException(e)
+                        }finally {
+                            Log.d("Test", "before invoker 3")
+                        }
+                        Log.d("Test", "after invoker $a")
+                        return a
+                    }
                 }, continuation)
+                Log.d("Test", "proxy 2 invoke Success! ret=${ret.javaClass.name}")
+                // val ret = method.invoke(target, *argumentsWithoutContinuation.toTypedArray())
                 ret
             } catch (e: Exception) {
+                Log.d("Test", "proxy 2 invoke Fail! $e")
                 val e2 = if (e is InvocationTargetException) e.cause ?: e else e
                 throw MyException(e2)
             }

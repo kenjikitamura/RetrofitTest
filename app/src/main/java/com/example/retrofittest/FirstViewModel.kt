@@ -8,7 +8,8 @@ class FirstViewModel(
     private val githubRepository: GithubRepository
 ): ViewModel() {
     suspend fun test() {
+        Log.d("Test", "FirstViewModel.test invoke repository before")
         val result = githubRepository.getSearchRepositories()
-        Log.d("Test", "TEST!!! $result")
+        Log.d("Test", "FirstViewModel.test invoke repository after")
     }
 }
