@@ -3,6 +3,7 @@ package com.example.retrofittest
 import android.app.Application
 import android.util.Log
 import com.example.retrofittest.api.GithubApi
+import com.example.retrofittest.entity.SearchRepositoriesResult
 import com.example.retrofittest.repository.GithubRepository
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
@@ -16,10 +17,13 @@ import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import java.lang.Exception
 import java.lang.IllegalStateException
+import java.lang.RuntimeException
 import java.lang.reflect.InvocationHandler
+import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
 import java.lang.reflect.Proxy
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.Continuation
 
 class MyApplication : Application() {
     override fun onCreate() {
@@ -58,15 +62,23 @@ class MyApplication : Application() {
         // GithubApi
         single {
             val retrofit = get<Retrofit>()
-            val api = Converter<GithubApi>().conv(retrofit, GithubApi::class.java)
+            //val api = Converter<GithubApi>().conv(retrofit, GithubApi::class.java)
+            val api = proxy(GithubApi::class.java) { method, arguments ->
+                //retrofit.create(GithubApi::class.java)
+                throw Exception("HOGE")
+                //SearchRepositoriesResult(
+                //999,
+                //emptyList()
+                //)
+            }
             GithubRepository(api)
         }
 
         viewModel { FirstViewModel(get()) }
     }
 
+    /*
     class Converter<T> {
-
         @Suppress("UNCHECKED_CAST")
         fun conv(retrofit: Retrofit, clazz: Class<T>): T {
             val api = retrofit.create(clazz)
@@ -96,6 +108,39 @@ class MyApplication : Application() {
             }
         }
     }
+     */
+
+    private interface SuspendFunction {
+        suspend fun invoke(): Any?
+    }
+
+    private val SuspendRemover = SuspendFunction::class.java.methods[0]
+
+    @Suppress("UNCHECKED_CAST")
+    fun <C : Any> proxy(contract: Class<C>, invoker: SuspendInvoker): C =
+        Proxy.newProxyInstance(contract.classLoader, arrayOf(contract)) { _, method, arguments ->
+            Log.d("Test", "proxy 1")
+            val continuation = arguments.last() as Continuation<*>
+            val argumentsWithoutContinuation = arguments.take(arguments.size - 1)
+            Log.d("Test", "proxy 2")
+            val a = try {
+                val ret = SuspendRemover.invoke(object : SuspendFunction {
+                    override suspend fun invoke() = invoker(method, argumentsWithoutContinuation)
+                }, continuation)
+                ret
+            } catch (e: Exception) {
+                val e2 = if (e is InvocationTargetException) e.cause ?: e else e
+                throw MyException(e2)
+            }
+            Log.d("Test", "proxy 3")
+            a
+        } as C
+
+    interface Adder {
+        suspend fun add(a: Int, b: Int): Int
+    }
 }
 
-class MyException(e: Throwable): Exception(e)
+class MyException(e: Throwable): RuntimeException(e)
+
+typealias SuspendInvoker = suspend (method: Method, arguments: List<Any?>) -> Any?
