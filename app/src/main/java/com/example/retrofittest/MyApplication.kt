@@ -68,13 +68,9 @@ class MyApplication : Application() {
         // GithubApi
         single {
             val retrofit = get<Retrofit>()
-            //val api = Converter<GithubApi>().conv(retrofit, GithubApi::class.java)
             val origApi = retrofit.create(GithubApi::class.java)
             val api = proxy(origApi, GithubApi::class.java) { method, arguments ->
-                Log.d("Test", "ProxyBody start $method ${arguments}")
-                val ret = method.invoke(origApi, *arguments.toTypedArray())
-                Log.d("Test", "ProxyBody end ${ret}")
-                ret
+                method.invoke(origApi, *arguments.toTypedArray())
             }
             GithubRepository(api)
         }
@@ -82,35 +78,18 @@ class MyApplication : Application() {
         viewModel { FirstViewModel(get()) }
     }
 
-    private interface SuspendFunction {
-        suspend fun invoke(): Any?
-    }
-
-    private val SuspendRemover = SuspendFunction::class.java.methods[0]
-
     @Suppress("UNCHECKED_CAST")
     fun <C : Any> proxy(target: Any, contract: Class<C>, invoker: SuspendInvoker): C =
         Proxy.newProxyInstance(contract.classLoader, arrayOf(contract)) { _, method, arguments ->
-            Log.d("Test", "Proxy 1 $method")
-            val continuation = arguments.last() as Continuation<Any?>
-            val argumentsWithoutContinuation = arguments.take(arguments.size -1)
-
-            val a = runBlocking {
+            runBlocking {
                 try {
+                    val argumentsWithoutContinuation = arguments.take(arguments.size -1)
                     method.invokeSuspend(target, *argumentsWithoutContinuation.toTypedArray())
                 } catch (e:Throwable) {
-                    Log.d("Test", "Proxy invokeSuspend error", e)
                     throw MyException(e)
                 }
             }
-
-            Log.d("Test", "Proxy end")
-            a
         } as C
-
-    interface Adder {
-        suspend fun add(a: Int, b: Int): Int
-    }
 }
 
 suspend fun Method.invokeSuspend(obj: Any, vararg args: Any?): Any? =
