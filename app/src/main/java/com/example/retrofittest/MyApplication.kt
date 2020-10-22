@@ -18,6 +18,7 @@ import java.lang.RuntimeException
 import java.lang.reflect.Method
 import java.lang.reflect.Proxy
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.Continuation
 import kotlin.coroutines.suspendCoroutine
 
 class MyApplication : Application() {
@@ -74,10 +75,11 @@ class MyApplication : Application() {
     @Suppress("UNCHECKED_CAST")
     fun <C : Any> proxy(contract: Class<C>, invoker: SuspendInvoker): C =
         Proxy.newProxyInstance(contract.classLoader, arrayOf(contract)) { _, method, arguments ->
-            runBlocking {
-                val argumentsWithoutContinuation = arguments.take(arguments.size -1)
-                invoker.invoke(method, argumentsWithoutContinuation)
-            }
+            val continuation = arguments.last() as Continuation<*>
+            val argumentsWithoutContinuation = arguments.take(arguments.size - 1)
+            SuspendRemover.invoke(object : SuspendFunction {
+                override suspend fun invoke() = invoker(method, argumentsWithoutContinuation)
+            }, continuation)
         } as C
 }
 
@@ -89,3 +91,9 @@ suspend fun Method.invokeSuspend(obj: Any, vararg args: Any?): Any? =
 class MyException(e: Throwable): RuntimeException(e)
 
 typealias SuspendInvoker = suspend (method: Method, arguments: List<Any?>) -> Any?
+
+private val SuspendRemover = SuspendFunction::class.java.methods[0]
+
+private interface SuspendFunction {
+    suspend fun invoke(): Any?
+}
